@@ -7,6 +7,3 @@ TODO
 #print res.msg
 #print res.read()
 #conn.close()
- - cli args
- - property file
- - save last IP and check it before a update, to reduce update request (only relevant for short cicles)
