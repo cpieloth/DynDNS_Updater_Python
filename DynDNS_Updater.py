@@ -15,10 +15,12 @@
 # You should have received a copy of the Lesser GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import urllib
-import httplib
+import argparse
 import base64
+import getpass 
+import httplib
 import logging
+import urllib
 
 class DynDns:
     GOOD = "good"
@@ -68,12 +70,16 @@ class DynDns:
     
     @staticmethod
     def update(user, pwd, hostname, ip):
+        base64auth = base64.b64encode('%s:%s' % (user, pwd))
+        return DynDns.updateBase(base64auth, hostname, ip)
+    
+    @staticmethod
+    def updateBase(base64auth, hostname, ip):
+        # TODO setUsername, setPassword, setAuthentication, setIp, setHostname, update
         # http://dyn.com/support/developers/api/perform-update/
         params = urllib.urlencode({"hostname": hostname, "myip": ip})
         url = "/nic/update?" + params
-        base64auth = base64.b64encode('%s:%s' % (user, pwd))
         headers = {"Authorization": "Basic %s" % base64auth, "User-Agent": urllib.URLopener.version}
-        
         conn = httplib.HTTPSConnection("members.dyndns.org", 443)
         conn.request("GET", url, None, headers)
         res = conn.getresponse()
@@ -83,14 +89,54 @@ class DynDns:
         return rcode
 
 
+def generateAuthentication(user, pwd):
+    if(not user):
+        user = raw_input("Username: ")
+    if(not pwd):
+        while(True):
+            pwd = getpass.getpass("Password: ")
+            pwd_check = getpass.getpass("Password again: ")
+            if(pwd == pwd_check):
+                break
+            print("The passwords are different. Please try again or cancel with CTRL+C")
+    base64auth = base64.b64encode('%s:%s' % (user, pwd))
+    print("Your Base64 authentication is:")
+    print(base64auth)
+    return
+
 def main():
-    logging.basicConfig(filename='DynDNS_Updater.log', format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-    USER = "user" # TODO set user
-    PASSWORD = "pwd"    # TODO set password
-    HOSTNAME = "host.dyndns.org"    # TODO set hostname
-    IP = "ip"    # TODO set ip
+    # Prepare CLI arguments
+    parser = argparse.ArgumentParser(description='A DynDNS Updater in Python.')
+    parser.add_argument("-u", "--user", help="DynDNS username (required or use -a)")
+    parser.add_argument("-p", "--password", help="password for DynDNS account (required or use -a)")
+    parser.add_argument("-a", "--authentication", help="Base64 encoded <user>:<password> (optional, to make username and password unreadable to the unaided eye)")
+    parser.add_argument("-d", "--domain", help="DynDNS hostname")
+    parser.add_argument("-i", "--ip", help="IP address to set")
+    parser.add_argument("-g", "--generate", help="generate Base64 encoded <user>:<password> for authentication", action="store_true")
+    parser.add_argument("-l", "--log", help="logging to file")
     
-    rcode = DynDns.update(USER, PASSWORD, HOSTNAME, IP)
+    # Check constraints
+    args = parser.parse_args()
+    if(args.generate):
+        generateAuthentication(args.user, args.password)
+        return
+    if(args.log):
+        logging.basicConfig(filename=args.log, format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+    else:
+        logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+    if((not args.user or not args.password) and not args.authentication):
+        logging.error("No authentication (username, password or authentication) set!")
+        return
+    if(not args.domain or not args.ip):
+        logging.error("No domain or IP address set!")
+        return
+    
+    # Update DynDNS
+    if(args.authentication):
+        rcode = DynDns.updateBase(args.authentication, args.domain, args.ip)
+    else:
+        rcode = rcode = DynDns.update(args.user, args.password, args.domain, args.ip)
+        
     if DynDns.checkCode(rcode, DynDns.GOOD) or DynDns.checkCode(rcode, DynDns.NOCHG):
         logging.info(DynDns.getMessage(rcode))
     else:
